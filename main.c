@@ -17,6 +17,8 @@
 #include <regex.h>
 
 #define BUFFER_SIZE 140 // Maximum number of chars in chat message
+#define CS456_PORT 3360 // Port number used for chat server
+#define CS456_IP '192.82.47.232' // IP address of chat server per instructions
 
 int ipChecker(char *ip){
     if (ip == NULL)
@@ -38,7 +40,7 @@ int ipChecker(char *ip){
 
 void server(){
  // todo figure out if we are inputting our own ip and port or if we are using the default
- // 127.0.0.1 and 8080
+
 
 
 }
