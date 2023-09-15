@@ -15,10 +15,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <regex.h>
+#include <netinet/in.h>
+#include <strings.h>
+#include <arpa/inet.h>
 
 #define BUFFER_SIZE 140 // Maximum number of chars in chat message
 #define CS456_PORT 3360 // Port number used for chat server
-#define CS456_IP '192.82.47.232' // IP address of chat server per instructions
+#define CS456_IP "127.0.0.1"
 
 int ipChecker(char *ip){
     if (ip == NULL)
@@ -35,13 +38,74 @@ int ipChecker(char *ip){
         fprintf(stderr, "Regex match failed\n");
         exit(1);
     }
-    regfree(&regex);
 }
 
 void server(){
  // todo figure out if we are inputting our own ip and port or if we are using the default
+    // socket -> bind -> listen -> accept -> read/write -> close
+    int sockfd, newsockfd,valread;
+    char buffer[BUFFER_SIZE];
+    struct sockaddr_in serv_addr;
 
+    printf("Welcome to Chat!\nWaiting for a connection on ip: %s and port: %d\n", CS456_IP, CS456_PORT);
 
+    if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
+        perror("Error opening socket");
+        exit(1);
+    }
+
+    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0){
+        perror("Error setting socket options");
+        exit(1);
+    }
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = inet_addr(CS456_IP); // INADDR_ANY; is used when we dont want to bind to specfic ip
+    serv_addr.sin_port = htons(CS456_PORT);
+
+    if(bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
+        perror("Error binding socket");
+        exit(1);
+    }
+
+    if(listen(sockfd, 5) < 0){
+        perror("Error listening on socket");
+        exit(1);
+    }
+
+    if((newsockfd = accept(sockfd, (struct sockaddr *) NULL, NULL)) < 0){
+        perror("Error accepting connection");
+        exit(1);
+    }
+    printf("Found a Friend! You recieve first.\n");
+
+    while(1){
+
+        bzero(buffer, BUFFER_SIZE);
+        valread = read(newsockfd, buffer, BUFFER_SIZE);
+        if(valread < 0){
+            perror("Error reading from socket");
+            exit(1);
+        }
+        printf("Friend: %s", buffer);
+        if(strncmp(buffer, "bye", 3) == 0){
+            printf("Friend left the chat. Goodbye!\n");
+            break;
+        }
+        bzero(buffer, BUFFER_SIZE);
+        printf("You: ");
+        fgets(buffer, BUFFER_SIZE, stdin);
+        if(strncmp(buffer, "bye", 3) == 0){
+            printf("Goodbye!\n");
+            break;
+        }
+        if(write(newsockfd, buffer, BUFFER_SIZE) < 0){
+            perror("Error writing to socket");
+            exit(1);
+        }
+    }
+    close(newsockfd);
+    close(sockfd);
 
 }
 
