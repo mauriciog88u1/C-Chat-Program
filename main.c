@@ -16,8 +16,9 @@
 #include <unistd.h>
 #include <regex.h>
 #include <netinet/in.h>
-#include <strings.h>
+#include <string.h>
 #include <arpa/inet.h>
+//#include <cstring>
 
 #define BUFFER_SIZE 140 // Maximum number of chars in chat message
 #define CS456_PORT 3360 // Port number used for chat server
@@ -41,7 +42,7 @@ int ipChecker(char *ip){
 }
 
 void server(){
- // todo figure out if we are inputting our own ip and port or if we are using the default
+    // todo figure out if we are inputting our own ip and port or if we are using the default
     // socket -> bind -> listen -> accept -> read/write -> close
     int sockfd, newsockfd,valread;
     char buffer[BUFFER_SIZE];
@@ -54,7 +55,8 @@ void server(){
         exit(1);
     }
 
-    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0){
+    int optval = 1;
+    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int)) < 0){
         perror("Error setting socket options");
         exit(1);
     }
@@ -133,10 +135,10 @@ int main(int argc, char* argv[]){
         while((opt = getopt(argc, argv, "p:s:h")) != -1){
             switch(opt){
                 case 'p':
-                        if(atoi(optarg) == 0){
-                            printf("Port is not valid\n");
-                            exit(1);
-                        }
+                    if(atoi(optarg) == 0){
+                        printf("Port is not valid\n");
+                        exit(1);
+                    }
                     port = atoi(optarg);
                     break;
                 case 's':
@@ -160,7 +162,3 @@ int main(int argc, char* argv[]){
 
     return 0;
 }
-
-
-
-
