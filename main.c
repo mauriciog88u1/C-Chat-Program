@@ -116,8 +116,53 @@ void client(int port, char* ip){
         printf("Invalid port number\n");
         exit(1);
     }
-    printf("port is :%d and the ip is: %s\n", port, ip);
 
+    int sockfd;
+    char buffer[BUFFER_SIZE];
+    struct sockaddr_in serv_addr;
+
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        printf("Socket creation error\n");
+        exit(EXIT_FAILURE);
+    }
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(port);
+
+    // Convert IPv4 and IPv6 addresses from text to binary form
+    if(inet_pton(AF_INET, ip, &serv_addr.sin_addr)<=0) {
+        printf("Invalid address/ Address not supported\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        printf("Connection Failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    while(1) {
+        printf("You: ");
+        bzero(buffer, BUFFER_SIZE);
+        fgets(buffer, BUFFER_SIZE, stdin);
+
+        if (strlen(buffer) > BUFFER_SIZE - 1) {
+            printf("Error: Message length exceeds 140 characters. Please enter a shorter message.\n");
+            continue;
+        }
+
+        send(sockfd, buffer, strlen(buffer), 0);
+
+        bzero(buffer, BUFFER_SIZE);
+        int valread = read(sockfd, buffer, BUFFER_SIZE);
+        if (valread < 0) {
+            printf("Error reading from server\n");
+            exit(EXIT_FAILURE);
+        }
+
+        printf("Server: %s", buffer);
+    }
+
+    close(sockfd);
 }
 
 
