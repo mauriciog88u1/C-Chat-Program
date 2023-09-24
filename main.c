@@ -18,11 +18,12 @@
 #include <netinet/in.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
 //#include <cstring>
 
 #define BUFFER_SIZE 140 // Maximum number of chars in chat message
-#define CS456_PORT 3360 // Port number used for chat server
-#define CS456_IP "127.0.0.1"
+#define CS457_PORT 3360 // Port number used for chat server
 
 int ipChecker(char *ip){
     if (ip == NULL)
@@ -40,6 +41,20 @@ int ipChecker(char *ip){
         exit(1);
     }
 }
+char* get_ip_address() {
+    int fd;
+    struct ifreq ifr;
+    char *ip = malloc(16 * sizeof(char));
+
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    ifr.ifr_addr.sa_family = AF_INET;
+    strncpy(ifr.ifr_name, "en0", IFNAMSIZ-1);
+    ioctl(fd, SIOCGIFADDR, &ifr);
+    close(fd);
+
+    strcpy(ip, inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr));
+    return ip;
+}
 
 void server(){
     // todo figure out if we are inputting our own ip and port or if we are using the default
@@ -48,7 +63,8 @@ void server(){
     char buffer[BUFFER_SIZE];
     struct sockaddr_in serv_addr;
 
-    printf("Welcome to Chat!\nWaiting for a connection on ip: %s and port: %d\n", CS456_IP, CS456_PORT);
+
+    printf("Welcome to Chat!\nWaiting for a connection on ip: %s and port: %d\n", get_ip_address(), CS457_PORT);
 
     if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
         perror("Error opening socket");
@@ -62,8 +78,8 @@ void server(){
     }
 
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = inet_addr(CS456_IP); // INADDR_ANY; is used when we dont want to bind to specfic ip
-    serv_addr.sin_port = htons(CS456_PORT);
+    serv_addr.sin_addr.s_addr = inet_addr(get_ip_address()); // INADDR_ANY; is used when we dont want to bind to specfic ip
+    serv_addr.sin_port = htons(CS457_PORT);
 
     if(bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
         perror("Error binding socket");
