@@ -48,7 +48,7 @@ char* get_ip_address() {
 
     fd = socket(AF_INET, SOCK_DGRAM, 0);
     ifr.ifr_addr.sa_family = AF_INET;
-    strncpy(ifr.ifr_name, "en0", IFNAMSIZ-1);
+    strncpy(ifr.ifr_name, "eno1", IFNAMSIZ-1);
     ioctl(fd, SIOCGIFADDR, &ifr);
     close(fd);
 
@@ -56,113 +56,154 @@ char* get_ip_address() {
     return ip;
 }
 
-void server(){
-    // todo figure out if we are inputting our own ip and port or if we are using the default
-    // socket -> bind -> listen -> accept -> read/write -> close
-    int sockfd, newsockfd,valread;
-    char buffer[BUFFER_SIZE];
-    struct sockaddr_in serv_addr;
-
-
-    printf("Welcome to Chat!\nWaiting for a connection on ip: %s and port: %d\n", get_ip_address(), CS457_PORT);
-
-    if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0){
+void initialize_socket(int *sockfd) {
+    if ((*sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Error opening socket");
         exit(1);
     }
+}
 
+void set_socket_options(int sockfd) {
     int optval = 1;
-    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int)) < 0){
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int)) < 0) {
         perror("Error setting socket options");
         exit(1);
     }
+}
 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = inet_addr(get_ip_address()); // INADDR_ANY; is used when we dont want to bind to specfic ip
-    serv_addr.sin_port = htons(CS457_PORT);
-
-    if(bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
+void bind_socket(int sockfd, struct sockaddr_in *serv_addr) {
+    if (bind(sockfd, (struct sockaddr *) serv_addr, sizeof(*serv_addr)) < 0) {
         perror("Error binding socket");
         exit(1);
     }
+}
 
-    if(listen(sockfd, 5) < 0){
+void listen_on_socket(int sockfd) {
+    if (listen(sockfd, 5) < 0) {
         perror("Error listening on socket");
         exit(1);
     }
+}
 
-    if((newsockfd = accept(sockfd, (struct sockaddr *) NULL, NULL)) < 0){
+int accept_connection(int sockfd) {
+    int newsockfd;
+    if ((newsockfd = accept(sockfd, (struct sockaddr *) NULL, NULL)) < 0) {
         perror("Error accepting connection");
         exit(1);
     }
-    printf("Found a Friend! You recieve first.\n");
+    return newsockfd;
+}
 
-    while(1){
+void handle_received_message(char *buffer, int *terminate_chat) {
+    printf("Friend: %s", buffer);
+    if (strncmp(buffer, "bye", 3) == 0) {
+        printf("Friend left the chat. Goodbye!\n");
+        *terminate_chat = 1;
+    }
+}
 
+void handle_sent_message(char *buffer, int newsockfd, int *terminate_chat) {
+    printf("You: ");
+    fgets(buffer, BUFFER_SIZE, stdin);
+    if (strncmp(buffer, "bye", 3) == 0) {
+        printf("Goodbye!\n");
+        *terminate_chat = 1;
+    }
+    if (write(newsockfd, buffer, BUFFER_SIZE) < 0) {
+        perror("Error writing to socket");
+        exit(1);
+    }
+}
+
+void chat_loop(int newsockfd) {
+    char buffer[BUFFER_SIZE];
+    int valread;
+    int terminate_chat = 0;
+
+    while (!terminate_chat) {
         bzero(buffer, BUFFER_SIZE);
-        valread = read(newsockfd, buffer, BUFFER_SIZE);
-        if(valread < 0){
+        valread = read(newsockfd, buffer, BUFFER_SIZE - 1);
+
+        if (valread < 0) {
             perror("Error reading from socket");
             exit(1);
         }
-        printf("Friend: %s", buffer);
-        if(strncmp(buffer, "bye", 3) == 0){
-            printf("Friend left the chat. Goodbye!\n");
-            break;
-        }
-        bzero(buffer, BUFFER_SIZE);
-        printf("You: ");
-        fgets(buffer, BUFFER_SIZE, stdin);
-        if(strncmp(buffer, "bye", 3) == 0){
-            printf("Goodbye!\n");
-            break;
-        }
-        if(write(newsockfd, buffer, BUFFER_SIZE) < 0){
-            perror("Error writing to socket");
-            exit(1);
-        }
-    }
-    close(newsockfd);
-    close(sockfd);
 
+        if (valread == BUFFER_SIZE - 1) {
+            printf("Error: Input too long!\n");
+            continue;
+        }
+
+        handle_received_message(buffer, &terminate_chat);
+        if (terminate_chat) break;
+
+        bzero(buffer, BUFFER_SIZE);
+        handle_sent_message(buffer, newsockfd, &terminate_chat);
+    }
 }
 
-void client(int port, char* ip){
-    if (port < 0 || port > 65535){
+
+void server() {
+    int sockfd, newsockfd;
+    struct sockaddr_in serv_addr;
+
+    printf("Welcome to Chat!\nWaiting for a connection on\n%s and port: %d\n", get_ip_address(), CS457_PORT);
+
+    initialize_socket(&sockfd);
+    set_socket_options(sockfd);
+
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = inet_addr(get_ip_address());
+    serv_addr.sin_port = htons(CS457_PORT);
+
+    bind_socket(sockfd, &serv_addr);
+    listen_on_socket(sockfd);
+
+    newsockfd = accept_connection(sockfd);
+    printf("Found a Friend! You receive first.\n");
+
+    chat_loop(newsockfd);
+
+    close(newsockfd);
+    close(sockfd);
+}
+
+
+void validate_port(int port) {
+    if (port < 0 || port > 65535) {
         printf("Invalid port number\n");
         exit(1);
     }
+}
 
-    int sockfd;
-    char buffer[BUFFER_SIZE];
-    struct sockaddr_in serv_addr;
+void connect_to_server(int *sockfd, struct sockaddr_in *serv_addr, char *ip, int port) {
+    serv_addr->sin_family = AF_INET;
+    serv_addr->sin_port = htons(port);
 
-    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        printf("Socket creation error\n");
-        exit(EXIT_FAILURE);
-    }
-
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(port);
-
-    // Convert IPv4 and IPv6 addresses from text to binary form
-    if(inet_pton(AF_INET, ip, &serv_addr.sin_addr)<=0) {
+    if (inet_pton(AF_INET, ip, &serv_addr->sin_addr) <= 0) {
         printf("Invalid address/ Address not supported\n");
         exit(EXIT_FAILURE);
     }
 
-    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    if (connect(*sockfd, (struct sockaddr *)serv_addr, sizeof(*serv_addr)) < 0) {
         printf("Connection Failed\n");
         exit(EXIT_FAILURE);
     }
+}
 
-    while(1) {
+void client_chat_loop(int sockfd) {
+    char buffer[BUFFER_SIZE];
+    while (1) {
         printf("You: ");
         bzero(buffer, BUFFER_SIZE);
-        fgets(buffer, BUFFER_SIZE, stdin);
 
-        if (strlen(buffer) > BUFFER_SIZE - 1) {
-            printf("Error: Message length exceeds 140 characters. Please enter a shorter message.\n");
+        if (fgets(buffer, BUFFER_SIZE, stdin) == NULL) {
+            printf("Error reading input\n");
+            continue;
+        }
+
+        if (buffer[strlen(buffer) - 1] != '\n' && strlen(buffer) == BUFFER_SIZE - 1) {
+            printf("Error: Input too Long!\n");
             continue;
         }
 
@@ -177,9 +218,26 @@ void client(int port, char* ip){
 
         printf("Server: %s", buffer);
     }
+}
+
+void client(int port, char *ip) {
+    validate_port(port);
+
+    printf("Connecting to server...\n");
+    int sockfd;
+    struct sockaddr_in serv_addr;
+
+    initialize_socket(&sockfd);
+
+    connect_to_server(&sockfd, &serv_addr, ip, port);
+
+    printf("Connected!\nConnected to a friend! You send first.\n");
+
+    client_chat_loop(sockfd);
 
     close(sockfd);
 }
+
 
 
 int main(int argc, char* argv[]){
@@ -223,3 +281,4 @@ int main(int argc, char* argv[]){
 
     return 0;
 }
+
