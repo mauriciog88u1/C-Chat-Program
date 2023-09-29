@@ -24,6 +24,20 @@
 
 #define BUFFER_SIZE 140 // Maximum number of chars in chat message
 #define CS457_PORT 3360 // Port number used for chat server
+#define VERSION 457
+
+#if defined(__APPLE__)
+#define OS "en0"
+#else
+#define OS "eno1"
+#endif
+
+struct __attribute__((packed)) packet {
+    uint16_t version;
+    uint16_t string_length;
+    char message[BUFFER_SIZE];
+
+};
 
 int ipChecker(char *ip){
     if (ip == NULL)
@@ -48,7 +62,7 @@ char* get_ip_address() {
 
     fd = socket(AF_INET, SOCK_DGRAM, 0);
     ifr.ifr_addr.sa_family = AF_INET;
-    strncpy(ifr.ifr_name, "eno1", IFNAMSIZ-1);
+    strncpy(ifr.ifr_name, OS, IFNAMSIZ-1);
     ioctl(fd, SIOCGIFADDR, &ifr);
     close(fd);
 
@@ -105,14 +119,26 @@ void handle_received_message(char *buffer, int *terminate_chat) {
 void handle_sent_message(char *buffer, int newsockfd, int *terminate_chat) {
     printf("You: ");
     fgets(buffer, BUFFER_SIZE, stdin);
-    if (strncmp(buffer, "bye", 3) == 0) {
-        printf("Goodbye!\n");
-        *terminate_chat = 1;
-    }
+
     if (write(newsockfd, buffer, BUFFER_SIZE) < 0) {
         perror("Error writing to socket");
         exit(1);
     }
+}
+
+void deserialize_packet(char *buffer, struct packet *pkt) {
+    pkt->version = ntohs(*(uint16_t*)(buffer));
+    pkt->string_length = ntohs(*(uint16_t*)(buffer + 2));
+    strncpy(pkt->message, buffer + 4, pkt->string_length);
+}
+
+void serialize_packet(struct packet *pkt, char *buffer) {
+    uint16_t version = htons(pkt->version);
+    uint16_t string_length = htons(pkt->string_length);
+
+    memcpy(buffer, &version, sizeof(version));
+    memcpy(buffer + sizeof(version), &string_length, sizeof(string_length));
+    memcpy(buffer + sizeof(version) + sizeof(string_length), pkt->message, pkt->string_length);
 }
 
 void chat_loop(int newsockfd) {
@@ -142,6 +168,40 @@ void chat_loop(int newsockfd) {
     }
 }
 
+void server_chat_loop(int newsockfd) {
+    char buffer[BUFFER_SIZE + 4]; // 4 extra bytes for version and string length
+    struct packet pkt;
+    pkt.version = VERSION;
+
+    while (1) {
+        bzero(buffer, BUFFER_SIZE + 4);
+        int bytes_received = recv(newsockfd, buffer, BUFFER_SIZE + 4, 0);
+        if (bytes_received <= 0) {
+            printf("Connection closed or error\n");
+            exit(1);
+        }
+
+        // Deserialize the received packet
+        deserialize_packet(buffer, &pkt);
+        if (pkt.version != VERSION) {
+            printf("Received packet with incorrect version. Ignoring.\n");
+            continue;
+        }
+        pkt.message[pkt.string_length] = '\0';
+        printf("Friend: %s", pkt.message);
+
+        // Capture and send your message back to the client
+        printf("You: ");
+        bzero(pkt.message, BUFFER_SIZE);
+        if (fgets(pkt.message, BUFFER_SIZE, stdin) == NULL) {
+            printf("Error reading input\n");
+            continue;
+        }
+        pkt.string_length = strlen(pkt.message);
+        serialize_packet(&pkt, buffer);
+        send(newsockfd, buffer, pkt.string_length + 4, 0);
+    }
+}
 
 void server() {
     int sockfd, newsockfd;
@@ -162,12 +222,11 @@ void server() {
     newsockfd = accept_connection(sockfd);
     printf("Found a Friend! You receive first.\n");
 
-    chat_loop(newsockfd);
+    server_chat_loop(newsockfd);
 
     close(newsockfd);
     close(sockfd);
 }
-
 
 void validate_port(int port) {
     if (port < 0 || port > 65535) {
@@ -192,33 +251,41 @@ void connect_to_server(int *sockfd, struct sockaddr_in *serv_addr, char *ip, int
 }
 
 void client_chat_loop(int sockfd) {
-    char buffer[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE + 4];
+    struct packet pkt;
+    pkt.version = VERSION;
+
     while (1) {
         printf("You: ");
-        bzero(buffer, BUFFER_SIZE);
+        bzero(pkt.message, BUFFER_SIZE);
 
-        if (fgets(buffer, BUFFER_SIZE, stdin) == NULL) {
+        if (fgets(pkt.message, BUFFER_SIZE, stdin) == NULL) {
             printf("Error reading input\n");
             continue;
         }
 
-        if (buffer[strlen(buffer) - 1] != '\n' && strlen(buffer) == BUFFER_SIZE - 1) {
-            printf("Error: Input too Long!\n");
+        pkt.string_length = strlen(pkt.message);
+        serialize_packet(&pkt, buffer);
+        send(sockfd, buffer, pkt.string_length + 4, 0);
+
+        bzero(buffer, BUFFER_SIZE + 4);
+        int bytes_received = recv(sockfd, buffer, BUFFER_SIZE + 4, 0);
+        if (bytes_received <= 0) {
+            printf("Connection closed or error\n");
+            exit(1);
+        }
+
+        deserialize_packet(buffer, &pkt);
+        if (pkt.version != VERSION) {
+            printf("Received packet with incorrect version. Ignoring.\n");
             continue;
         }
-
-        send(sockfd, buffer, strlen(buffer), 0);
-
-        bzero(buffer, BUFFER_SIZE);
-        int valread = read(sockfd, buffer, BUFFER_SIZE);
-        if (valread < 0) {
-            printf("Error reading from server\n");
-            exit(EXIT_FAILURE);
-        }
-
-        printf("Server: %s", buffer);
+        pkt.message[pkt.string_length] = '\0';
+        printf("Friend: %s", pkt.message);
     }
 }
+
+
 
 void client(int port, char *ip) {
     validate_port(port);
