@@ -181,7 +181,6 @@ void server_chat_loop(int newsockfd) {
             exit(1);
         }
 
-        // Deserialize the received packet
         deserialize_packet(buffer, &pkt);
         if (pkt.version != VERSION) {
             printf("Received packet with incorrect version. Ignoring.\n");
@@ -190,7 +189,6 @@ void server_chat_loop(int newsockfd) {
         pkt.message[pkt.string_length] = '\0';
         printf("Friend: %s", pkt.message);
 
-        // Capture and send your message back to the client
         printf("You: ");
         bzero(pkt.message, BUFFER_SIZE);
         if (fgets(pkt.message, BUFFER_SIZE, stdin) == NULL) {
