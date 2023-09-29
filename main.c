@@ -110,7 +110,7 @@ int accept_connection(int sockfd) {
 
 void handle_received_message(char *buffer, int *terminate_chat) {
     printf("Friend: %s", buffer);
-    if (strncmp(buffer, "bye", 3) == 0) {
+    if (strncmp(buffer, "end_chat_debug", 3) == 0) {
         printf("Friend left the chat. Goodbye!\n");
         *terminate_chat = 1;
     }
